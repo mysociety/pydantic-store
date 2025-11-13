@@ -1,5 +1,5 @@
 {
-	"name": "{{cookiecutter.underscored}}",
+	"name": "datapattern",
 	"build": {
 		"dockerfile": "../Dockerfile"
 	},

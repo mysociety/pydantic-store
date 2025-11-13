@@ -1,17 +1,17 @@
 [tool.poetry]
-name = "{{cookiecutter.hyphenated}}"
+name = "datapattern"
 version = "0.1.0"
-description = "{{cookiecutter.description}}"
-authors = ["{{cookiecutter.author_name}} <{{cookiecutter.author_email}}>"]
+description = "Helper models and backports"
+authors = ["mySociety <alex.parsons@mysociety.org>"]
 readme = "README.md"
 license = "MIT"
-homepage = "https://github.com/{{cookiecutter.github_id}}"
-repository = "https://github.com/{{cookiecutter.github_id}}"
+homepage = "https://github.com/mysociety/datapattern"
+repository = "https://github.com/mysociety/datapattern"
 include = [
     "LICENSE.md",
 ]
 
-[tool.poetry_bumpversion.file."src/{{cookiecutter.underscored}}/__init__.py"]
+[tool.poetry_bumpversion.file."src/datapattern/__init__.py"]
 
 [tool.poetry.dependencies]
 python = "^3.8"
