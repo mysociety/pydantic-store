@@ -1,0 +1,20 @@
+{
+	"name": "{{cookiecutter.underscored}}",
+	"build": {
+		"dockerfile": "../Dockerfile"
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [	
+				"ms-vscode.test-adapter-converter",
+				"bungcip.better-toml",
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"ms-azuretools.vscode-docker",
+				"valentjn.vscode-ltex",
+				"mhutchie.git-graph",
+				"charliermarsh.ruff"
+			]
+		}
+	}
+}

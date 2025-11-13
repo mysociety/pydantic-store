@@ -1,0 +1,12 @@
+{
+  "lib_name": "",
+  "description": "",
+  "hyphenated": "{{ '-'.join(cookiecutter['lib_name'].lower().split()).replace('_', '-') }}",
+  "underscored": "{{ cookiecutter.hyphenated.replace('-', '_') }}",
+  "github_username": "",
+  "author_name": "",
+  "author_email": "",
+  "year":"{% now 'utc', '%Y' %}",
+  "yyyy_mm_dd":"{% now 'utc', '%Y-%m-%d' %}",
+  "github_id": "{{cookiecutter.github_username}}/{{cookiecutter.lib_name}}"
+}

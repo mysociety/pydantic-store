@@ -1,0 +1,29 @@
+[tool.poetry]
+name = "{{cookiecutter.hyphenated}}"
+version = "0.1.0"
+description = "{{cookiecutter.description}}"
+authors = ["{{cookiecutter.author_name}} <{{cookiecutter.author_email}}>"]
+readme = "README.md"
+license = "MIT"
+homepage = "https://github.com/{{cookiecutter.github_id}}"
+repository = "https://github.com/{{cookiecutter.github_id}}"
+include = [
+    "LICENSE.md",
+]
+
+[tool.poetry_bumpversion.file."src/{{cookiecutter.underscored}}/__init__.py"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.1.2"
+pytest-cov = "^3.0.0"
+pylint = "^2.12.2"
+ruff = "^0.4.4"
+pyright = "^1.1"
+toml = "^0.10.2"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
