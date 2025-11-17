@@ -30,7 +30,7 @@ from typing_extensions import Self
 
 # Optional imports for YAML and TOML support
 try:
-    from ruamel.yaml import YAML
+    from ruamel.yaml import YAML  # type: ignore
 
     yaml = YAML()
     yaml.preserve_quotes = True
@@ -47,7 +47,7 @@ except ImportError:
         tomllib = None  # type: ignore
 
 try:
-    import tomli_w
+    import tomli_w  # type: ignore
 except ImportError:
     tomli_w = None  # type: ignore
 
