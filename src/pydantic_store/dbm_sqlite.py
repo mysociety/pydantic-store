@@ -53,22 +53,19 @@ class _Database(MutableMapping[str, T]):
             raise error(_ERR_REINIT)
 
         path = os.fsdecode(path)
-        match flag:
-            case "r":
-                flag = "ro"
-            case "w":
-                flag = "rw"
-            case "c":
-                flag = "rwc"
-                Path(path).touch(mode=mode, exist_ok=True)
-            case "n":
-                flag = "rwc"
-                Path(path).unlink(missing_ok=True)
-                Path(path).touch(mode=mode)
-            case _:
-                raise ValueError(
-                    f"Flag must be one of 'r', 'w', 'c', or 'n', not {flag!r}"
-                )
+        if flag == "r":
+            flag = "ro"
+        elif flag == "w":
+            flag = "rw"
+        elif flag == "c":
+            flag = "rwc"
+            Path(path).touch(mode=mode, exist_ok=True)
+        elif flag == "n":
+            flag = "rwc"
+            Path(path).unlink(missing_ok=True)
+            Path(path).touch(mode=mode)
+        else:
+            raise ValueError(f"Flag must be one of 'r', 'w', 'c', or 'n', not {flag!r}")
 
         # We use the URI format when opening the database.
         uri = _normalize_uri(path)
