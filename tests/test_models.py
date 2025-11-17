@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
 import pytest
 from pydantic_store.models import (
@@ -915,7 +915,7 @@ class TestJsonStoreClass:
         with open(file_path, "w") as f:
             json.dump(data, f)
 
-        store = JsonStore[str | int].connect(file_path)
+        store = JsonStore[Union[str, int]].connect(file_path)
 
         assert dict(store) == data
         assert store["existing"] == "data"
