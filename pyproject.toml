@@ -1,20 +1,21 @@
 [tool.poetry]
-name = "datapattern"
+name = "pydantic-store"
 version = "0.1.0"
 description = "Helper models and backports"
 authors = ["mySociety <alex.parsons@mysociety.org>"]
 readme = "README.md"
 license = "MIT"
-homepage = "https://github.com/mysociety/datapattern"
-repository = "https://github.com/mysociety/datapattern"
+homepage = "https://github.com/mysociety/pydantic-store"
+repository = "https://github.com/mysociety/pydantic-store"
 include = [
     "LICENSE.md",
 ]
 
-[tool.poetry_bumpversion.file."src/datapattern/__init__.py"]
+[tool.poetry_bumpversion.file."src/pydantic_store/__init__.py"]
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = "^3.9"
+pydantic = ">=2.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.1.2"

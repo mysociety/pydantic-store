@@ -34,13 +34,17 @@ jobs:
     if: ${{ (github.event.inputs.testpypi == 'false' && github.event.inputs.pypi == 'false') || github.event_name == 'push' }}
     needs: test
     runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write
+      contents: write
     steps:
 
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Fetch repo name
         id: repo_name
-        run: echo "::set-output name=value::$(echo '${{ github.repository }}' | awk -F '/' '{print $2}')"
+        run: echo "value=$(echo '${{ github.repository }}' | awk -F '/' '{print $2}')" >> $GITHUB_OUTPUT
 
       - id: get_status
         name: get_status
@@ -62,32 +66,34 @@ jobs:
         env:
           TAGS: ${{ steps.get_status.outputs.version_tags }}
 
-      - name: Build and publish to pypi
+      - name: Build
         if: ${{ steps.get_status.outputs.remote_exists == 'true' && steps.get_status.outputs.version_difference == 'true'}}
-        uses: JRubics/poetry-publish@v1.11
-        with:
-          pypi_token: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          pip install poetry
+          python -m poetry build
+
+      - name: Publish
+        if: ${{ steps.get_status.outputs.remote_exists == 'true' && steps.get_status.outputs.version_difference == 'true'}}
+        uses: pypa/gh-action-pypi-publish@release/v1
 
   # run manual if one of the boolean buttons for workflow was used
   # this can force the initial creation of the package
   publish-manual:
-    if: ${{ github.event.inputs.testpypi == 'true' || github.event.inputs.pypi == 'true' }}
+    if: ${{ github.event.inputs.pypi == 'true' }}
     needs: test 
     runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write
+      contents: write
     steps:
 
-      - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
-      - name: Build and publish to pypi
-        if: ${{ github.event.inputs.pypi == 'true' }}
-        uses: JRubics/poetry-publish@v1.11
-        with:
-          pypi_token: ${{ secrets.PYPI_TOKEN }}
+    - name: Build
+      run: |
+        pip install poetry
+        python -m poetry build
 
-      - name: Build and publish to testpypi
-        if: ${{ github.event.inputs.testpypi == 'true' }}
-        uses: JRubics/poetry-publish@v1.11
-        with:
-          pypi_token: ${{ secrets.TEST_PYPI_TOKEN }}
-          repository_name: "testpypi"
-          repository_url: "https://test.pypi.org/legacy/"
+    - name: Publish
+      uses: pypa/gh-action-pypi-publish@release/v1

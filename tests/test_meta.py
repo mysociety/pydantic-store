@@ -2,8 +2,10 @@
 Run meta tests on package (apply to muliple packages)
 
 """
+
 from pathlib import Path
-import datapattern as package
+
+import pydantic_store as package
 import toml
 
 
