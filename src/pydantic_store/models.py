@@ -17,7 +17,6 @@ from typing import (
     Mapping,
     Optional,
     Protocol,
-    TypeAlias,
     TypeVar,
     Union,
     overload,
@@ -58,7 +57,7 @@ FileFormats = Literal["json", "yaml", "toml", "auto"]
 T = TypeVar("T")
 K = TypeVar("K")
 PathLike = Union[str, Path]
-IncEx: TypeAlias = Union[
+IncEx = Union[
     set[int],
     set[str],
     Mapping[int, Union["IncEx", bool]],
