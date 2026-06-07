@@ -1,15 +1,39 @@
 from __future__ import annotations
 
+from collections.abc import ItemsView, Iterator, ValuesView
 from pathlib import Path
 from typing import Literal, Optional, TypeVar, Union
 
 from pydantic import TypeAdapter
 
-from .dbm_sqlite import _Database  # type: ignore
+from .dbm_sqlite import ITER_VALUES, _Database
+from .dbm_sqlite import _ItemsView as _RawItemsView
+from .dbm_sqlite import _ValuesView as _RawValuesView
 
 T = TypeVar("T")
 PathLike = Union[str, Path]
 FlagOptions = Literal["r", "w", "c", "n"]
+
+
+class _ValuesView(_RawValuesView[T]):
+    """ValuesView that validates each raw row into the storage_format model."""
+
+    def __iter__(self) -> Iterator[T]:
+        mapping: PydanticDBM[T] = self._mapping  # type: ignore
+        for raw in super().__iter__():
+            yield mapping.type_adapter.validate_json(raw)  # type: ignore
+
+    def __contains__(self, value: object) -> bool:
+        return any(item == value for item in self)
+
+
+class _ItemsView(_RawItemsView[T]):
+    """ItemsView that validates each raw row into the storage_format model."""
+
+    def __iter__(self) -> Iterator[tuple[str, T]]:
+        mapping: PydanticDBM[T] = self._mapping  # type: ignore
+        for key, raw in super().__iter__():
+            yield key, mapping.type_adapter.validate_json(raw)  # type: ignore
 
 
 class PydanticDBM(_Database[T]):
