@@ -20,6 +20,8 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any, Literal, TypeVar, Union
 
+from typing_extensions import Self
+
 BUILD_TABLE = """
   CREATE TABLE IF NOT EXISTS Dict (
     key BLOB UNIQUE NOT NULL,
@@ -74,12 +76,12 @@ class _ValuesView(ValuesView[T]):
         self._params = params
 
     def __iter__(self) -> Iterator[T]:
-        with self._mapping._execute(self._sql, self._params) as cu:
+        with self._mapping._execute(self._sql, self._params) as cu:  # type: ignore
             for row in cu:
                 yield row[0]
 
     def __len__(self) -> int:
-        with self._mapping._execute(
+        with self._mapping._execute(  # type: ignore
             f"SELECT COUNT(*) FROM ({self._sql})", self._params
         ) as cu:
             row = cu.fetchone()
@@ -92,7 +94,7 @@ class _ItemsView(ItemsView[str, T]):
     _mapping: _Database[T]
 
     def __iter__(self) -> Iterator[tuple[str, T]]:
-        with self._mapping._execute(ITER_ITEMS) as cu:
+        with self._mapping._execute(ITER_ITEMS) as cu:  # type: ignore
             for row in cu:
                 yield row[0].decode("utf-8"), row[1]
 
@@ -189,7 +191,7 @@ class _Database(MutableMapping[str, T]):
     def items(self) -> ItemsView[str, T]:
         return _ItemsView(self)
 
-    def __enter__(self) -> _Database[T]:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(
