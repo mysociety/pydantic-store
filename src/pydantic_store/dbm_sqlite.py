@@ -7,11 +7,20 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from collections.abc import Iterator, KeysView, MutableMapping
+from collections.abc import (
+    ItemsView,
+    Iterator,
+    KeysView,
+    MutableMapping,
+    Sequence,
+    ValuesView,
+)
 from contextlib import closing, suppress
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Literal, TypeVar, Union
+
+from typing_extensions import Self
 
 BUILD_TABLE = """
   CREATE TABLE IF NOT EXISTS Dict (
@@ -24,6 +33,8 @@ LOOKUP_KEY = "SELECT value FROM Dict WHERE key = CAST(? AS BLOB)"
 STORE_KV = "REPLACE INTO Dict (key, value) VALUES (CAST(? AS BLOB), CAST(? AS BLOB))"
 DELETE_KEY = "DELETE FROM Dict WHERE key = CAST(? AS BLOB)"
 ITER_KEYS = "SELECT key FROM Dict"
+ITER_VALUES = "SELECT value FROM Dict"
+ITER_ITEMS = "SELECT key, value FROM Dict"
 
 
 class error(OSError):
@@ -43,6 +54,49 @@ def _normalize_uri(path: Union[str, os.PathLike[str]]) -> str:
 
 
 T = TypeVar("T")
+
+
+class _ValuesView(ValuesView[T]):
+    """Live view of stored values, fetched via a single query per iteration.
+
+    Defaults to the bulk ``ITER_VALUES`` query, but can be given a different
+    ``SELECT value FROM Dict ...`` query and params to act as a live filtered view.
+    """
+
+    _mapping: _Database[T]
+
+    def __init__(
+        self,
+        mapping: _Database[T],
+        sql: str = ITER_VALUES,
+        params: Sequence[object] = (),
+    ) -> None:
+        super().__init__(mapping)
+        self._sql = sql
+        self._params = params
+
+    def __iter__(self) -> Iterator[T]:
+        with self._mapping._execute(self._sql, self._params) as cu:  # type: ignore
+            for row in cu:
+                yield row[0]
+
+    def __len__(self) -> int:
+        with self._mapping._execute(  # type: ignore
+            f"SELECT COUNT(*) FROM ({self._sql})", self._params
+        ) as cu:
+            row = cu.fetchone()
+        return row[0]
+
+
+class _ItemsView(ItemsView[str, T]):
+    """Live view of stored (key, value) pairs, fetched via a single bulk query per iteration."""
+
+    _mapping: _Database[T]
+
+    def __iter__(self) -> Iterator[tuple[str, T]]:
+        with self._mapping._execute(ITER_ITEMS) as cu:  # type: ignore
+            for row in cu:
+                yield row[0].decode("utf-8"), row[1]
 
 
 class _Database(MutableMapping[str, T]):
@@ -131,7 +185,13 @@ class _Database(MutableMapping[str, T]):
     def keys(self) -> KeysView[str]:
         return super().keys()
 
-    def __enter__(self) -> _Database[T]:
+    def values(self) -> ValuesView[T]:
+        return _ValuesView(self)
+
+    def items(self) -> ItemsView[str, T]:
+        return _ItemsView(self)
+
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(

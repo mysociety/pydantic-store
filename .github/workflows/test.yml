@@ -50,5 +50,5 @@ jobs:
     - name: Test with ruff
       shell: bash
       run: |
-        python -m ruff .
-        python -m ruff format --check .
+        poetry run ruff check .
+        poetry run ruff format --check .

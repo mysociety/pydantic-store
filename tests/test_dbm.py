@@ -2,12 +2,14 @@
 Test suite for pydantic_store.dbm module.
 """
 
+from collections.abc import ItemsView, ValuesView
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pytest
 from pydantic import BaseModel, Field
-from pydantic_store import dbm
+
+from pydantic_store import dbm, is_in
 from pydantic_store.dbm import PydanticDBM
 
 
@@ -27,6 +29,11 @@ class NestedModel(BaseModel):
 class DictModel(BaseModel):
     mapping: Dict[str, Any]
     metadata: Dict[str, str] = Field(default_factory=dict)
+
+
+class OptionalModel(BaseModel):
+    name: str
+    maybe: Optional[int] = None
 
 
 class TestPydanticDBM:
@@ -417,17 +424,16 @@ class TestEdgeCases:
 
     def test_model_with_none_values(self, tmp_path: Path):
         """Test models with None/optional values."""
-        from typing import Optional
 
-        class OptionalModel(BaseModel):
+        class NullableModel(BaseModel):
             name: str
             value: Optional[int] = None
             active: bool = True
 
         db_path = tmp_path / "test.db"
 
-        with PydanticDBM[OptionalModel](db_path) as db:
-            model = OptionalModel(name="test", value=None)
+        with PydanticDBM[NullableModel](db_path) as db:
+            model = NullableModel(name="test", value=None)
             db["optional"] = model
 
             retrieved = db["optional"]
@@ -491,3 +497,294 @@ class TestEdgeCases:
         # Accessing closed database should raise error
         with pytest.raises(Exception):  # Database error
             _ = db["key1"]
+
+
+class TestBulkMethods:
+    """Test cases for values() and items() on PydanticDBM."""
+
+    # --- values() ---
+
+    def test_values_returns_view(self, tmp_path: Path):
+        models = [
+            SimpleModel(name="a", value=1),
+            SimpleModel(name="b", value=2),
+            SimpleModel(name="c", value=3),
+        ]
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            for i, m in enumerate(models):
+                db[str(i)] = m
+            result = db.values()
+            assert isinstance(result, ValuesView)
+            assert len(result) == 3
+            assert set(m.name for m in result) == {"a", "b", "c"}
+            assert SimpleModel(name="a", value=1) in result
+
+    def test_values_is_live(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="a", value=1)
+            view = db.values()
+            assert len(view) == 1
+            db["b"] = SimpleModel(name="b", value=2)
+            assert len(view) == 2
+            assert {m.name for m in view} == {"a", "b"}
+
+    def test_values_empty(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            assert list(db.values()) == []
+
+    # --- items() ---
+
+    def test_items_returns_view(self, tmp_path: Path):
+        m = SimpleModel(name="hello", value=99)
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["k1"] = m
+            result = db.items()
+            assert isinstance(result, ItemsView)
+            assert len(result) == 1
+            assert ("k1", m) in result
+            key, value = next(iter(result))
+            assert key == "k1"
+            assert value == m
+
+    def test_items_is_live(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="a", value=1)
+            view = db.items()
+            assert len(view) == 1
+            db["b"] = SimpleModel(name="b", value=2)
+            assert len(view) == 2
+            assert dict((k, v.name) for k, v in view) == {"a": "a", "b": "b"}
+
+    def test_items_empty(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            assert list(db.items()) == []
+
+
+class TestLambdaQuery:
+    """Test cases for PydanticDBM.query() — lambda-based filter expressions."""
+
+    # --- comparisons ---
+
+    def test_query_gt(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="a", value=1)
+            db["b"] = SimpleModel(name="b", value=5)
+            db["c"] = SimpleModel(name="c", value=10)
+            result = db.query(lambda m: m.value > 4)
+            assert {m.name for m in result} == {"b", "c"}
+
+    def test_query_eq(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="alice", value=42)
+            db["b"] = SimpleModel(name="bob", value=7)
+            result = db.query(lambda m: m.value == 42)
+            assert len(result) == 1
+            assert next(iter(result)).name == "alice"
+
+    def test_query_ne(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="alice", value=42)
+            db["b"] = SimpleModel(name="bob", value=7)
+            result = db.query(lambda m: m.value != 42)
+            assert len(result) == 1
+            assert next(iter(result)).name == "bob"
+
+    def test_query_eq_none(self, tmp_path: Path):
+        # `is None` can't be overloaded (no __is__ dunder) and always evaluates
+        # to a literal False — `== None` is the correct way to match nulls, and
+        # relies on `build_condition` compiling it to `IS NULL`, not `= NULL`
+        # (SQL's `= NULL` is always NULL/falsy, even for genuinely-null values).
+        with PydanticDBM[OptionalModel](tmp_path / "test.db") as db:
+            db["a"] = OptionalModel(name="a", maybe=None)
+            db["b"] = OptionalModel(name="b", maybe=5)
+            result = db.query(lambda m: m.maybe == None)  # noqa: E711
+            assert len(result) == 1
+            assert next(iter(result)).name == "a"
+
+    def test_query_ne_none(self, tmp_path: Path):
+        with PydanticDBM[OptionalModel](tmp_path / "test.db") as db:
+            db["a"] = OptionalModel(name="a", maybe=None)
+            db["b"] = OptionalModel(name="b", maybe=5)
+            result = db.query(lambda m: m.maybe != None)  # noqa: E711
+            assert len(result) == 1
+            assert next(iter(result)).name == "b"
+
+    def test_query_lt_le_ge(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="a", value=1)
+            db["b"] = SimpleModel(name="b", value=5)
+            db["c"] = SimpleModel(name="c", value=10)
+            assert {m.name for m in db.query(lambda m: m.value < 5)} == {"a"}
+            assert {m.name for m in db.query(lambda m: m.value <= 5)} == {"a", "b"}
+            assert {m.name for m in db.query(lambda m: m.value >= 5)} == {"b", "c"}
+
+    # --- boolean combinators ---
+
+    def test_query_and(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="a", value=10, active=True)
+            db["b"] = SimpleModel(name="b", value=3, active=True)
+            db["c"] = SimpleModel(name="c", value=10, active=False)
+            result = db.query(lambda m: (m.value > 5) & (m.active == True))  # noqa: E712
+            assert len(result) == 1
+            assert next(iter(result)).name == "a"
+
+    def test_query_or(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="a", value=1)
+            db["b"] = SimpleModel(name="b", value=5)
+            db["c"] = SimpleModel(name="c", value=10)
+            result = db.query(lambda m: (m.value < 2) | (m.value > 8))
+            assert {m.name for m in result} == {"a", "c"}
+
+    def test_query_not(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="a", value=1, active=True)
+            db["b"] = SimpleModel(name="b", value=2, active=False)
+            result = db.query(lambda m: ~(m.active == True))  # type: ignore  # noqa: E712
+            assert len(result) == 1
+            assert next(iter(result)).name == "b"
+
+    def test_query_combined_and_or(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="a", value=10, active=True)
+            db["b"] = SimpleModel(name="b", value=10, active=False)
+            db["c"] = SimpleModel(name="c", value=1, active=True)
+            result = db.query(
+                lambda m: ((m.value > 5) & (m.active == True)) | (m.value < 2)  # type: ignore  # noqa: E712
+            )  # type: ignore  # noqa: E712
+            assert {m.name for m in result} == {"a", "c"}
+
+    # --- lookup-style methods ---
+
+    def test_query_contains_startswith_endswith(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="alice", value=1)
+            db["b"] = SimpleModel(name="alicia", value=2)
+            db["c"] = SimpleModel(name="bob", value=3)
+            assert {m.name for m in db.query(lambda m: m.name.startswith("ali"))} == {
+                "alice",
+                "alicia",
+            }
+            assert {m.name for m in db.query(lambda m: m.name.endswith("ia"))} == {
+                "alicia"
+            }
+
+    def test_query_in(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="a", value=1)
+            db["b"] = SimpleModel(name="b", value=2)
+            db["c"] = SimpleModel(name="c", value=3)
+            result = db.query(lambda m: is_in(m.value, [1, 3]))
+            assert {m.name for m in result} == {"a", "c"}
+
+    # --- path navigation ---
+
+    def test_query_nested_path(self, tmp_path: Path):
+        with PydanticDBM[NestedModel](tmp_path / "test.db") as db:
+            db["a"] = NestedModel(id=1, data=SimpleModel(name="x", value=50))
+            db["b"] = NestedModel(id=2, data=SimpleModel(name="y", value=150))
+            result = db.query(lambda m: m.data.value > 100)
+            assert len(result) == 1
+            assert next(iter(result)).id == 2
+
+    # --- return value ---
+
+    def test_query_returns_view(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="alice", value=42)
+            db["b"] = SimpleModel(name="bob", value=7)
+            result = db.query(lambda m: m.value > 5)
+            assert isinstance(result, ValuesView)
+            assert len(result) == 2
+
+    def test_query_is_live(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="alice", value=42)
+            view = db.query(lambda m: m.value > 5)
+            assert len(view) == 1
+            db["b"] = SimpleModel(name="bob", value=7)
+            assert len(view) == 2
+
+    # --- edge cases ---
+
+    def test_query_empty_db(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            assert list(db.query(lambda m: m.value > 0)) == []
+
+    def test_query_no_matches(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="a", value=1)
+            assert list(db.query(lambda m: m.value > 9999)) == []
+
+    def test_query_and_or_not_raise(self, tmp_path: Path):
+        # 'and'/'or'/'not' convert their operands to bool before the lambda's
+        # logic can run, which would silently drop part of the expression
+        # tree (e.g. "(m.a > 1) and (m.b > 2)" collapsing to just "m.b > 2").
+        # Using them must raise loudly rather than build a silently-wrong query.
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="a", value=1)
+            with pytest.raises(TypeError, match="&.*\\|.*~"):
+                db.query(lambda m: (m.value > 1) and (m.active == True))  # noqa: E712
+            with pytest.raises(TypeError, match="&.*\\|.*~"):
+                db.query(lambda m: not (m.value > 1))
+            with pytest.raises(TypeError, match="&.*\\|.*~"):
+                db.query(lambda m: m.active and (m.value > 1))
+
+
+class TestQueryFilterMode:
+    """Test cases for PydanticDBM.query(predicate, mode="filter")."""
+
+    def test_filter_mode_runs_predicate_on_real_instances(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="alice", value=1)
+            db["b"] = SimpleModel(name="bob", value=2)
+            result = db.query(lambda m: m.name.upper() == "ALICE", mode="filter")
+            assert {m.name for m in result} == {"alice"}
+
+    def test_filter_mode_supports_and_or_not(self, tmp_path: Path):
+        # Unlike mode="sql", the predicate runs against real model instances
+        # here, so ordinary 'and'/'or'/'not' work exactly as normal Python.
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="a", value=10, active=True)
+            db["b"] = SimpleModel(name="b", value=3, active=True)
+            db["c"] = SimpleModel(name="c", value=10, active=False)
+            result = db.query(lambda m: m.value > 5 and m.active, mode="filter")
+            assert {m.name for m in result} == {"a"}
+
+    def test_filter_mode_bare_field_truthiness(self, tmp_path: Path):
+        # mode="sql" can't evaluate a bare field's truthiness (no universal
+        # SQL equivalent of Python's truthy/falsy) — mode="filter" can,
+        # since the predicate runs against the real deserialised value.
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="a", value=1, active=True)
+            db["b"] = SimpleModel(name="b", value=2, active=False)
+            result = db.query(lambda m: m.active, mode="filter")
+            assert {m.name for m in result} == {"a"}
+
+    def test_filter_mode_returns_view(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="alice", value=42)
+            db["b"] = SimpleModel(name="bob", value=7)
+            result = db.query(lambda m: m.value > 5, mode="filter")
+            assert isinstance(result, ValuesView)
+            assert len(result) == 2
+            assert {m.name for m in result} == {"alice", "bob"}
+
+    def test_filter_mode_is_live(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="alice", value=42)
+            view = db.query(lambda m: m.value > 5, mode="filter")
+            assert len(view) == 1
+            db["b"] = SimpleModel(name="bob", value=7)
+            assert len(view) == 2
+            assert {m.name for m in view} == {"alice", "bob"}
+
+    def test_filter_mode_empty_db(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            assert list(db.query(lambda m: m.value > 0, mode="filter")) == []
+
+    def test_filter_mode_no_matches(self, tmp_path: Path):
+        with PydanticDBM[SimpleModel](tmp_path / "test.db") as db:
+            db["a"] = SimpleModel(name="a", value=1)
+            assert list(db.query(lambda m: m.value > 9999, mode="filter")) == []
