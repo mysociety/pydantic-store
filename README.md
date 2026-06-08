@@ -131,24 +131,60 @@ settings.to_file("settings.yaml")
 A wrapper around the sqlite DBM backend (backported from 3.14) to store and retrieve pydantic models. 
 
 ```python
-from pydantic_store import PydanticDBM
+from pydantic_store import PydanticDBM, is_in
 from pydantic import BaseModel
 
 class User(BaseModel):
     name: str
     age: int
+    score: float
 
 UserDBM = PydanticDBM[User]
 
 # Method 1: Type subscription
 with UserDBM("users.db") as db:
-    user = User(name="Alice", age=30)
-    db["alice"] = user
-    retrieved_user = db["alice"]  # Automatically validated as User
+    db["alice"] = User(name="Alice", age=30, score=95.0)
+    db["bob"]   = User(name="Bob",   age=25, score=72.5)
+    db["carol"] = User(name="Carol", age=35, score=88.0)
+
+    retrieved = db["alice"]  # Automatically validated as User
+
+    # Bulk access — live views, fetched in a single query per iteration
+    all_users  = db.values()               # ValuesView[User]
+    all_items  = db.items()                # ItemsView[str, User]
+    print(list(all_users))                 # [User(...), User(...), ...]
+
+    # query() — lambda-based filtering, returns a live ValuesView[User]
+    # (re-iterating reflects current data)
+    adults     = db.query(lambda u: u.age >= 30)                       # Alice, Carol
+    high_score = db.query(lambda u: u.score > 80.0)                    # Alice, Carol
+    named_a    = db.query(lambda u: u.name.startswith("A"))            # Alice
+    top_adults = db.query(lambda u: (u.age >= 30) & (u.score > 90.0))  # Alice only
+    in_list =  = db.query(lambda u: is_in(u.name, ["Alice"])           # Alice only
 
 # Method 2: Explicit storage format
 with PydanticDBM("users.db", storage_format=User) as db:
-    db["bob"] = User(name="Bob", age=25)
+    db["dave"] = User(name="Dave", age=28, score=60.0)
+```
+
+By default (`mode="sql"`), the lambda is type-checked and autocompleted as if
+`u` were a real `User`, but is actually run once against a stand-in that builds
+an expression tree — translated into a single parameterised SQL query, so
+filtering happens in SQLite.
+
+This supports comparisons, `&`/`|`/`~` for
+AND/OR/NOT (Python can't overload `and`/`or`/`not`/`in`/`is`, so they raise
+`TypeError` rather than silently building the wrong query), `.contains()` /
+`.startswith()` / `.endswith()`, and `is_in(field, values)` for membership tests. 
+
+Pass `mode="filter"` to instead run the lambda as an ordinary Python predicate
+against each deserialised model — `and`/`or`/`not`, string/collection methods,
+computed properties, and other Python logic all work normally, at the
+cost of fetching and deserialising every record rather than filtering in SQLite:
+
+```python
+    db.query(lambda u: u.name.upper() == "ALICE", mode="filter")
+    db.query(lambda u: u.age >= 30 and u.score > 90.0, mode="filter")
 ```
 
 ### JsonStore
