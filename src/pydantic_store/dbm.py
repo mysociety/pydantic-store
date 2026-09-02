@@ -29,7 +29,7 @@ class PydanticDBM(_Database[T]):
         /,
         *,
         flag: FlagOptions = "c",
-        mode: int = 0o600,
+        mode: int = 0o666,
         storage_format: Optional[type[T]] = None,
     ):
         super().__init__(path, flag=flag, mode=mode)
@@ -51,7 +51,7 @@ def open(
     filename: PathLike,
     /,
     flag: FlagOptions = "c",
-    mode: int = 0o600,
+    mode: int = 0o666,
     storage_format: type[T] = str,
 ) -> PydanticDBM[T]:
     return PydanticDBM(filename, flag=flag, mode=mode, storage_format=storage_format)

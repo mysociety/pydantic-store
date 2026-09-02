@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pydantic-store"
-version = "0.1.0"
+version = "0.1.1"
 description = "Helper models and backports"
 authors = ["mySociety <alex.parsons@mysociety.org>"]
 readme = "README.md"
